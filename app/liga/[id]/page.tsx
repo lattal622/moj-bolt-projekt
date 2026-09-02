@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { MatchCard } from "@/components/match-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMatchDate, getFormResult, formColor } from "@/lib/format";
-import { TeamStanding, MatchEvent } from "@/lib/types";
+import { TeamStanding } from "@/lib/types";
 import Link from "next/link";
 import { CalendarDays, Table2, History } from "lucide-react";
 
@@ -35,40 +35,27 @@ export default async function LeaguePage({
 }
 
 async function LeagueContent({ id }: { id: string }) {
-  let league: Awaited<ReturnType<typeof getLeagueById>> = null;
-  let nextEvents: MatchEvent[] = [];
-  let lastEvents: MatchEvent[] = [];
-  let standings: TeamStanding[] = [];
-
+  let league, nextEvents, lastEvents, standings;
   try {
     league = await getLeagueById(id);
-  } catch {
-    // league fetch failed - show error
-  }
-
-  try {
     nextEvents = await getNextEvents(id);
-  } catch {
-    // next events failed - empty
-  }
-
-  try {
     lastEvents = await getLastEvents(id);
-  } catch {
-    // last events failed - empty
-  }
-
-  try {
     standings = await getStandings(id);
   } catch {
-    // standings failed - empty
+    return (
+      <Card>
+        <CardContent className="p-8 text-center text-muted-foreground">
+          Greška pri dohvaćanju podataka o ligi. Pokušajte ponovno kasnije.
+        </CardContent>
+      </Card>
+    );
   }
 
   if (!league) {
     return (
       <Card>
         <CardContent className="p-8 text-center text-muted-foreground">
-          Liga nije pronađena ili je došlo do greške. Pokušajte ponovno kasnije.
+          Liga nije pronađena.
         </CardContent>
       </Card>
     );

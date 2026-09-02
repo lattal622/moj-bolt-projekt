@@ -225,24 +225,45 @@ async function predictWithGroq(prompt: string, settings: AISettings): Promise<Pr
     throw new Error("Nedostaje Groq API ključ. Dodajte ga u postavkama.");
   }
 
-  const res = await fetch("/api/groq/generate", {
+  const model = settings.groqModel || "llama-3.3-70b-versatile";
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${settings.groqApiKey}`,
+    },
     body: JSON.stringify({
-      apiKey: settings.groqApiKey,
-      model: settings.groqModel || "llama-3.3-70b-versatile",
-      prompt,
+      model,
+      messages: [
+        {
+          role: "system",
+          content: "Ti si stručni nogometni analitičar. Uvijek odgovaraš isključivo u JSON formatu.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.4,
+      max_tokens: 800,
+      response_format: { type: "json_object" },
     }),
   });
 
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({ error: "Nepoznata greška" }));
-    throw new Error(errData.error || `Groq greška: ${res.status}`);
+    const errText = await res.text();
+    let friendly = `Groq API greška: ${res.status}`;
+    if (res.status === 401) {
+      friendly = "Groq API ključ nije valjan. Provjerite ključ u postavkama.";
+    } else if (res.status === 429) {
+      friendly = "Prekoračili ste besplatni limit za Groq (14400 zahtjeva/dan). Pokušajte kasnije.";
+    }
+    throw new Error(`${friendly} ${errText.substring(0, 150)}`);
   }
 
   const data = await res.json();
-  if (!data.response) throw new Error("Groq nije vratio odgovor.");
-  return parseResponse(data.response);
+  const text = data.choices?.[0]?.message?.content || "";
+
+  if (!text) throw new Error("Groq nije vratio odgovor.");
+  return parseResponse(text);
 }
 
 async function predictWithOllama(prompt: string, settings: AISettings): Promise<PredictionResult> {
@@ -313,22 +334,31 @@ export async function testGroqConnection(settings: AISettings): Promise<{ ok: bo
   }
 
   try {
-    const res = await fetch("/api/groq/test", {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.groqApiKey}`,
+      },
       body: JSON.stringify({
-        apiKey: settings.groqApiKey,
         model: settings.groqModel || "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: "Odgovori s JSON: {\"status\": \"ok\"}" }],
+        max_tokens: 20,
+        temperature: 0,
       }),
     });
 
-    const data = await res.json();
-
-    if (res.ok && data.ok) {
-      return { ok: true, message: data.message };
+    if (res.ok) {
+      return { ok: true, message: "Groq radi! API ključ je valjan." };
     }
 
-    return { ok: false, message: data.message || `Groq greška: HTTP ${res.status}` };
+    if (res.status === 401) {
+      return { ok: false, message: "Groq API ključ nije valjan. Provjerite ključ." };
+    }
+    if (res.status === 429) {
+      return { ok: false, message: "Prekoračen besplatni limit za Groq. Pokušajte kasnije." };
+    }
+    return { ok: false, message: `Groq greška: HTTP ${res.status}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Nepoznata greška";
     return { ok: false, message: `Greška pri spajanju na Groq: ${msg}` };
